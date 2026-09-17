@@ -20,7 +20,7 @@ if not GEMINI_API_KEY:
         "GEMINI_API_KEY is missing. Add it to your .env file."
     )
 
-MODEL_NAME = "gemini-3.6-flash"
+MODEL_NAME = "gemini-3.8-live"
 
 client = genai.Client(api_key=GEMINI_API_KEY)
 
