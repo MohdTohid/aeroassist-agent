@@ -124,7 +124,7 @@ def get_booking(pnr: str) -> dict[str, Any] | None:
 # ---------------------------------------------------------
 
 class ChatRequest(BaseModel):
-    pnr: str = Field(min_length=1)
+    pnr: str | None = Field(default=None)
     user_message: str = Field(min_length=1)
 
 
@@ -137,6 +137,7 @@ class SystemAction(BaseModel):
 class ChatResponse(BaseModel):
     reply: str
     system_action: SystemAction
+    pnr: str | None = None
 
 # ---------------------------------------------------------
 # Airline policy
@@ -351,25 +352,19 @@ async def get_booking_endpoint(pnr: str):
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
-    booking = get_booking(request.pnr)
+    pnr = request.pnr.strip().upper() if request.pnr else ""
 
-    if not booking:
-        return ChatResponse(
-            reply=(
-                "I couldn't find a booking matching that PNR. "
-                "Please check your booking reference and try again."
-            ),
-            system_action=SystemAction(
-                type="none",
-            ),
-        )
+    booking = get_booking(pnr) if pnr else None
 
-    customer_context = build_customer_context(booking)
+    customer_context = ""
+
+    if booking:
+        customer_context = build_customer_context(booking)
 
     full_prompt = f"""
 VERIFIED CUSTOMER / BOOKING CONTEXT
 -----------------------------------
-{customer_context}
+{customer_context if customer_context else "No verified booking has been identified yet."}
 
 CUSTOMER MESSAGE
 ----------------
@@ -390,19 +385,6 @@ CUSTOMER MESSAGE
             ),
         )
 
-        # -------------------------------------------------
-        # Gemini automatic function calling
-        # -------------------------------------------------
-        #
-        # With the current Google GenAI Python SDK, Python
-        # functions supplied as tools can be automatically
-        # executed by the SDK.
-        #
-        # We therefore inspect the final response for any
-        # function calls and expose the relevant backend
-        # action to the frontend.
-        # -------------------------------------------------
-
         if response.function_calls:
             function_call = response.function_calls[0]
 
@@ -421,7 +403,7 @@ CUSTOMER MESSAGE
 
                 return ChatResponse(
                     reply=(
-                        "I’m escalating this request to a specialist "
+                        "I'm escalating this request to a specialist "
                         "support agent for review. They will assist you "
                         "with the request that falls outside the standard "
                         "resolution policy."
@@ -430,6 +412,7 @@ CUSTOMER MESSAGE
                         type="escalated",
                         reason=result["reason"],
                     ),
+                    pnr=pnr or None,
                 )
 
             if function_name == "issue_delay_compensation":
@@ -456,11 +439,8 @@ CUSTOMER MESSAGE
                             type="issued_compensation",
                             compensation=compensation_type,
                         ),
+                        pnr=pnr or None,
                     )
-
-        # -------------------------------------------------
-        # Normal conversational response
-        # -------------------------------------------------
 
         reply = response.text
 
@@ -475,6 +455,7 @@ CUSTOMER MESSAGE
             system_action=SystemAction(
                 type="none",
             ),
+            pnr=pnr or None,
         )
 
     except Exception as exc:
